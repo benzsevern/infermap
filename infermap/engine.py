@@ -11,9 +11,10 @@ import numpy as np
 import yaml
 
 from infermap.assignment import optimal_assign
+from infermap.dictionaries import merge_domains
 from infermap.providers import extract_schema
 from infermap.scorers import default_scorers
-from infermap.scorers.alias import ALIASES, _ALIAS_LOOKUP
+from infermap.scorers.alias import ALIASES, _ALIAS_LOOKUP, AliasScorer
 from infermap.calibration import Calibrator
 from infermap.types import FieldMapping, MapResult, SchemaInfo
 
@@ -65,6 +66,29 @@ def _common_affix_tokens(names: list[str], *, at_start: bool) -> str:
         return ""
 
 
+def _default_scorers_with_domains(domains: list[str]) -> list:
+    """Build the default scorer list with an AliasScorer that knows about
+    the requested domains in addition to the generic defaults.
+
+    `generic` is always included (prepended if the caller didn't ask for
+    it) so users who pass `domains=["healthcare"]` still get common PII
+    aliases like `email`/`phone`.
+    """
+    ordered: list[str] = []
+    if "generic" not in domains:
+        ordered.append("generic")
+    ordered.extend(domains)
+    merged_aliases = merge_domains(ordered)
+    # Build the default list, then swap out the AliasScorer for one that
+    # holds the merged dict. Keeps ordering stable with default_scorers().
+    scorers = default_scorers()
+    for i, sc in enumerate(scorers):
+        if isinstance(sc, AliasScorer):
+            scorers[i] = AliasScorer(aliases=merged_aliases)
+            break
+    return scorers
+
+
 def _populate_canonical_names(schema: SchemaInfo) -> None:
     """Strip the common prefix + suffix (if any) from each field name and
     populate ``FieldInfo.canonical_name``. Mutates the schema in place.
@@ -95,10 +119,21 @@ class MapEngine:
         config_path: str | None = None,
         return_score_matrix: bool = False,
         calibrator: Calibrator | None = None,
+        domains: list[str] | None = None,
     ) -> None:
         self.min_confidence = min_confidence
         self.sample_size = sample_size
-        self.scorers = scorers if scorers is not None else default_scorers()
+        # Domain dictionaries: when set, build a per-engine AliasScorer whose
+        # lookup merges `generic` plus the requested domains. When None
+        # (default), scorers use the module-level ALIASES so the existing
+        # infermap.yaml-based alias extension path still works.
+        self.domains = domains
+        if scorers is not None:
+            self.scorers = scorers
+        elif domains is not None:
+            self.scorers = _default_scorers_with_domains(domains)
+        else:
+            self.scorers = default_scorers()
         self.return_score_matrix = return_score_matrix
         # Optional post-assignment confidence calibrator. Applied AFTER
         # optimal_assign has picked mappings, so it never changes which
@@ -118,6 +153,16 @@ class MapEngine:
         cfg_path = Path(path)
         with open(cfg_path, encoding="utf-8") as fh:
             cfg = yaml.safe_load(fh) or {}
+
+        # Apply domain dictionaries from config (additive: merges into the
+        # current AliasScorer's alias dict, or builds a per-engine one if
+        # the default is still in use).
+        domains_cfg = cfg.get("domains")
+        if domains_cfg:
+            if not isinstance(domains_cfg, list):
+                raise ValueError("`domains` in config must be a list of strings")
+            self.domains = list(domains_cfg)
+            self.scorers = _default_scorers_with_domains(self.domains)
 
         # Apply scorer overrides
         scorers_cfg: dict = cfg.get("scorers", {})
