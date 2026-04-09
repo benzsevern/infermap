@@ -45,7 +45,7 @@ export class MapEngine {
   private readonly onScorerError: NonNullable<MapEngineOptions["onScorerError"]>;
 
   constructor(options: MapEngineOptions = {}) {
-    this.minConfidence = options.minConfidence ?? 0.3;
+    this.minConfidence = options.minConfidence ?? 0.2;
     this.scorers = options.scorers ?? defaultScorers();
     this.returnScoreMatrix = options.returnScoreMatrix ?? false;
     this.onScorerError =

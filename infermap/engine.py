@@ -28,7 +28,7 @@ class MapEngine:
 
     def __init__(
         self,
-        min_confidence: float = 0.3,
+        min_confidence: float = 0.2,
         sample_size: int = 500,
         scorers=None,
         config_path: str | None = None,
