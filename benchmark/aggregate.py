@@ -59,7 +59,12 @@ def _arrow(delta: float, *, invert: bool = False) -> str:
     return "🔺" if delta >= 0 else "🔻"
 
 
-def _render_headline_row(language: str, current: dict, baseline: dict | None) -> str:
+def _render_headline_row(
+    language: str,
+    current: dict,
+    baseline: dict | None,
+    regression_threshold: float = 0.02,
+) -> str:
     sc = current["scorecard"]["overall"]
     if baseline is None:
         return (
@@ -72,7 +77,7 @@ def _render_headline_row(language: str, current: dict, baseline: dict | None) ->
 
     base_sc = baseline["scorecard"]["overall"]
     deltas = {k: float(sc[k]) - float(base_sc[k]) for k in METRIC_KEYS}
-    verdict = classify_verdict(deltas)
+    verdict = classify_verdict(deltas, threshold=regression_threshold)
 
     return (
         f"| {language:<11} "
@@ -92,6 +97,7 @@ def render_comment(
     python_report: dict | None,
     ts_report: dict | None,
     baseline: dict | None,
+    regression_threshold: float = 0.02,
 ) -> str:
     lines = [COMMENT_HEADER, "", "## 🧭 infermap benchmark", ""]
 
@@ -115,12 +121,12 @@ def render_comment(
     base_ts = baseline["typescript"] if baseline else None
 
     if python_report is not None:
-        lines.append(_render_headline_row("Python", python_report, base_py))
+        lines.append(_render_headline_row("Python", python_report, base_py, regression_threshold))
     else:
         lines.append(_render_failed_row("Python"))
 
     if ts_report is not None:
-        lines.append(_render_headline_row("TypeScript", ts_report, base_ts))
+        lines.append(_render_headline_row("TypeScript", ts_report, base_ts, regression_threshold))
     else:
         lines.append(_render_failed_row("TypeScript"))
 
@@ -211,7 +217,7 @@ def main_impl(
         print("no reports to aggregate", file=sys.stderr)
         return 1
 
-    markdown = render_comment(py_report, ts_report, baseline)
+    markdown = render_comment(py_report, ts_report, baseline, regression_threshold)
     Path(markdown_path).write_text(markdown, encoding="utf-8")
 
     if output_path is not None:

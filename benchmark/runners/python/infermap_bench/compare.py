@@ -9,9 +9,9 @@ _METRIC_KEYS = ("f1", "top1", "mrr", "ece")
 _ZERO_METRIC_SET = {k: 0.0 for k in _METRIC_KEYS} | {"n": 0}
 
 
-@dataclass
+@dataclass(frozen=True)
 class Delta:
-    """A computed delta between two reports."""
+    """A computed delta between two reports (immutable)."""
     overall: dict[str, float] = field(default_factory=dict)
     by_difficulty: dict[str, dict[str, float]] = field(default_factory=dict)
     by_category: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -19,7 +19,12 @@ class Delta:
     per_case_deltas: list[tuple[str, float, float]] = field(default_factory=list)
 
     def is_regression(self, threshold: float = 0.02) -> bool:
-        """True if overall F1 dropped by more than `threshold` (strictly)."""
+        """True iff overall F1 dropped by *strictly* more than `threshold`.
+
+        Uses a `1e-9` IEEE-754 epsilon guard so a drop exactly equal to
+        `threshold` (modulo float rounding) is NOT classified as a regression.
+        Mirrors the JS compare.ts `isRegression` implementation.
+        """
         f1_delta = self.overall.get("f1", 0.0)
         return f1_delta < -threshold - 1e-9
 
@@ -68,29 +73,34 @@ def _slice_delta(
 
 
 def compute_delta(baseline: dict, current: dict) -> Delta:
-    """Diff two report.json dicts, producing a structured Delta."""
-    delta = Delta()
-    delta.overall = _metric_delta(
-        baseline["scorecard"]["overall"], current["scorecard"]["overall"]
-    )
-    delta.by_difficulty = _slice_delta(
-        baseline["scorecard"].get("by_difficulty", {}),
-        current["scorecard"].get("by_difficulty", {}),
-    )
-    delta.by_category = _slice_delta(
-        baseline["scorecard"].get("by_category", {}),
-        current["scorecard"].get("by_category", {}),
-    )
-    delta.by_tag = _slice_delta(
-        baseline["scorecard"].get("by_tag", {}),
-        current["scorecard"].get("by_tag", {}),
-    )
+    """Diff two report.json dicts, producing a structured Delta.
 
+    Computes per-metric deltas (`current - baseline`) for the overall scorecard
+    and every by_* slice, plus per-case F1 triples for cases present in both
+    reports. The returned Delta is frozen; all fields are populated at
+    construction time.
+    """
     baseline_cases = {c["id"]: c for c in baseline.get("per_case", [])}
     current_cases = {c["id"]: c for c in current.get("per_case", [])}
     common = sorted(set(baseline_cases) & set(current_cases))
-    delta.per_case_deltas = [
-        (cid, float(baseline_cases[cid]["f1"]), float(current_cases[cid]["f1"]))
-        for cid in common
-    ]
-    return delta
+    return Delta(
+        overall=_metric_delta(
+            baseline["scorecard"]["overall"], current["scorecard"]["overall"]
+        ),
+        by_difficulty=_slice_delta(
+            baseline["scorecard"].get("by_difficulty", {}),
+            current["scorecard"].get("by_difficulty", {}),
+        ),
+        by_category=_slice_delta(
+            baseline["scorecard"].get("by_category", {}),
+            current["scorecard"].get("by_category", {}),
+        ),
+        by_tag=_slice_delta(
+            baseline["scorecard"].get("by_tag", {}),
+            current["scorecard"].get("by_tag", {}),
+        ),
+        per_case_deltas=[
+            (cid, float(baseline_cases[cid]["f1"]), float(current_cases[cid]["f1"]))
+            for cid in common
+        ],
+    )

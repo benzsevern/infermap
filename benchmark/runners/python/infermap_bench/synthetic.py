@@ -1,8 +1,12 @@
 """Synthetic case generator — canonical (Python-only) per spec §7.4.
 
 This module contains the pure transform primitives used by the generator
-(Task 4.3). Every transform preserves `Field.canonical_name` so the generator
-can recover ground truth regardless of name/sample mutations.
+(Task 4.3). Transforms that mutate an existing field (renames, case changes,
+sample typos, dtype casts, reorder) preserve `Field.canonical_name` so the
+generator can recover ground truth regardless of name/sample mutations.
+`drop_columns` removes fields entirely and `add_distractors` inserts new
+fields with `canonical_name=None`; both are tracked explicitly by the
+generator when computing expected mappings.
 """
 from __future__ import annotations
 

@@ -5,9 +5,31 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable, TypedDict
 
 import jsonschema
+
+
+class MetricSet(TypedDict):
+    """Aggregated scorecard metrics for a slice of results."""
+    f1: float
+    top1: float
+    mrr: float
+    ece: float
+    n: int
+
+
+class Report(TypedDict):
+    """Shape of a single-language benchmark report.json."""
+    version: int
+    language: str
+    infermap_version: str
+    runner_version: str
+    ran_at: str
+    duration_seconds: float
+    scorecard: dict[str, Any]
+    per_case: list[dict[str, Any]]
+    failed_cases: list[str]
 
 from . import REPORT_VERSION
 from .metrics import (
@@ -18,7 +40,7 @@ from .metrics import (
 )
 
 
-@dataclass
+@dataclass(frozen=True)
 class CaseResult:
     case_id: str
     category: str
@@ -79,7 +101,13 @@ def build_report(
     infermap_version: str,
     runner_version: str,
     duration_seconds: float,
-) -> dict:
+) -> Report:
+    """Assemble a report.json dict from a list of per-case results.
+
+    Aggregates metrics into overall, by_difficulty, by_category, and by_tag
+    slices, and emits one per_case entry per result. The return value conforms
+    to the `Report` TypedDict and the committed report.schema.json.
+    """
     ran_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     return {
         "version": REPORT_VERSION,
@@ -115,6 +143,7 @@ def build_report(
 
 
 def validate_report(report: dict, schema_path: Path | str) -> None:
+    """Validate a report dict against report.schema.json. Raises on mismatch."""
     schema = json.loads(Path(schema_path).read_text(encoding="utf-8"))
     jsonschema.validate(report, schema)
 
@@ -122,6 +151,7 @@ def validate_report(report: dict, schema_path: Path | str) -> None:
 def write_report(
     report: dict, output_path: Path | str, schema_path: Path | str
 ) -> None:
+    """Validate a report and atomically write it as pretty-printed JSON."""
     validate_report(report, schema_path)
     Path(output_path).write_text(
         json.dumps(report, indent=2, sort_keys=False) + "\n",

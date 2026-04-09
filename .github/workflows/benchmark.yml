@@ -225,6 +225,10 @@ jobs:
 
       - name: Commit updated baseline
         run: |
+          set -euo pipefail
+          # Refuse to commit an empty or missing baseline — build_baseline.py
+          # must have produced a non-zero-byte file before we touch git.
+          test -s benchmark/baselines/main.json
           git config user.name "infermap-bot"
           git config user.email "noreply@github.com"
           git add benchmark/baselines/main.json benchmark/baselines/main.metadata.json

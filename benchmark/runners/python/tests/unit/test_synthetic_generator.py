@@ -85,6 +85,29 @@ def test_determinism_same_seed():
         assert a.expected_mappings == b.expected_mappings
 
 
+def test_loaded_cases_set_value_count_to_sample_length():
+    """Regression guard: `_load_synthetic_cases` must set value_count to
+    len(samples) on every field so ProfileScorer doesn't silently abstain
+    (its gate is `source.value_count == 0 or target.value_count == 0 → None`).
+    """
+    from infermap_bench.cli import _load_synthetic_cases
+    cases = _load_synthetic_cases(
+        REPO_ROOT / "benchmark" / "cases" / "synthetic" / "generated.json"
+    )
+    assert len(cases) > 0
+    for c in cases:
+        for f in c.source_schema.fields:
+            assert f.value_count == len(f.sample_values), (
+                f"{c.id}: source field {f.name} has value_count={f.value_count} "
+                f"but {len(f.sample_values)} samples"
+            )
+        for f in c.target_schema.fields:
+            assert f.value_count == len(f.sample_values), (
+                f"{c.id}: target field {f.name} has value_count={f.value_count} "
+                f"but {len(f.sample_values)} samples"
+            )
+
+
 def test_write_and_reload_roundtrip(tmp_path):
     cfg = load_synthetic_config(CONFIG_PATH)
     cases = list(generate_all_synthetic(cfg))

@@ -91,6 +91,20 @@ describe("loadSyntheticCases", () => {
     expect(c2!.tags).not.toContain("mutated");
   });
 
+  it("sets valueCount === samples.length on every loaded field", () => {
+    // Regression guard: ProfileScorer abstains when valueCount === 0, so
+    // the loader must propagate samples.length onto valueCount or synthetic
+    // cases would silently lose a scorer contributor.
+    const path = writeGenerated({ version: 1, seed: 42, cases: [sampleCase] });
+    const [c] = loadSyntheticCases(path);
+    for (const f of c!.sourceSchema.fields) {
+      expect(f.valueCount).toBe(f.sampleValues.length);
+    }
+    for (const f of c!.targetSchema.fields) {
+      expect(f.valueCount).toBe(f.sampleValues.length);
+    }
+  });
+
   it("rejects unsupported version", () => {
     const path = writeGenerated({ version: 999, seed: 42, cases: [] });
     expect(() => loadSyntheticCases(path)).toThrow(/version/i);

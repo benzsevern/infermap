@@ -48,13 +48,18 @@ export function matchesFilter(ref: CaseRef, filter: string): boolean {
 }
 
 function readInfermapVersion(): string {
+  // Returns "unknown" on failure (NOT "0.0.0", which would silently corrupt
+  // the baseline by tagging real runs with a fake version). Errors are logged
+  // to stderr so CI surfaces them.
   try {
     const pkg = JSON.parse(
       readFileSync(resolve(REPO_ROOT, "packages/infermap-js/package.json"), "utf8"),
     ) as { version: string };
     return pkg.version;
-  } catch {
-    return "0.0.0";
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`warn: failed to read infermap-js package.json: ${msg}\n`);
+    return "unknown";
   }
 }
 
@@ -67,6 +72,10 @@ function loadSyntheticCasesIfExists(): CaseData[] {
   return loadSyntheticCases(path);
 }
 
+// Tolerance is intentionally 1e-4 (not tighter): expected_self_test.json
+// stores metrics rounded to 6 decimal places (e.g. f1=0.857143 is 6/7
+// rounded). 1e-6 would trip on that rounding. If the expected file is ever
+// regenerated at higher precision, tighten this.
 function assertScorecardMatches(
   actual: Report,
   expected: { scorecard: { overall: Record<string, number> } },
@@ -145,6 +154,16 @@ program
 
       if (!opts.selfTest) {
         cases.push(...loadSyntheticCasesIfExists());
+      }
+
+      // Refuse to write a "perfect" scorecard for an empty corpus — it would
+      // poison baselines. An empty run is almost always a misconfiguration.
+      if (cases.length === 0) {
+        process.stderr.write(
+          "ERROR: no cases to run. Check manifest path and --only filter. " +
+            "Refusing to write a vacuous scorecard.\n",
+        );
+        process.exit(2);
       }
 
       const t0 = performance.now();

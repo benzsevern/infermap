@@ -1,6 +1,7 @@
 """MapEngine — orchestrates schema extraction, scoring, and assignment."""
 from __future__ import annotations
 
+import copy
 import logging
 import time
 from pathlib import Path
@@ -135,13 +136,16 @@ class MapEngine:
         """
         t0 = time.perf_counter()
 
-        # 2. Merge required fields
+        # 1. Merge required fields
         required_set: set[str] = set(tgt_schema.required_fields)
         if required:
             required_set.update(required)
 
-        # 3. Merge schema_file aliases into target fields
+        # 2. Merge schema_file aliases into target fields.
+        # Deep-copy tgt_schema first so we don't mutate the caller's object
+        # (we write into tgt_field.metadata["aliases"]).
         if schema_file_schema is not None:
+            tgt_schema = copy.deepcopy(tgt_schema)
             sf_by_name = {f.name: f for f in schema_file_schema.fields}
             for tgt_field in tgt_schema.fields:
                 if tgt_field.name in sf_by_name:
@@ -154,7 +158,7 @@ class MapEngine:
             # Also propagate required from schema_file
             required_set.update(schema_file_schema.required_fields)
 
-        # 4. Build M x N score matrix
+        # 3. Build M x N score matrix
         src_fields = src_schema.fields
         tgt_fields = tgt_schema.fields
         M = len(src_fields)
@@ -182,12 +186,10 @@ class MapEngine:
                     if result is not None:
                         results[sc.name] = (result, sc.weight)
 
-                # 5. Score combination: weighted average, min 2 contributors
+                # 4. Score combination: weighted average, min 2 contributors
                 if len(results) < _MIN_CONTRIBUTORS:
                     combined = 0.0
                 else:
-                    total_weight = sum(w for _, (_, w) in enumerate(results.values()) if True)
-                    # rebuild properly
                     total_weight = sum(w for (_, w) in results.values())
                     weighted_sum = sum(r.score * w for (r, w) in results.values())
                     combined = weighted_sum / total_weight if total_weight > 0 else 0.0
@@ -206,10 +208,10 @@ class MapEngine:
                 for i in range(M)
             }
 
-        # 6. Optimal assignment
+        # 5. Optimal assignment
         assignments = optimal_assign(score_matrix, self.min_confidence)
 
-        # 7. Build MapResult
+        # 6. Build MapResult
         assigned_src = {r for r, _, _ in assignments}
         assigned_tgt = {c for _, c, _ in assignments}
 
@@ -233,7 +235,7 @@ class MapEngine:
         unmapped_source = [src_fields[i].name for i in range(M) if i not in assigned_src]
         unmapped_target = [tgt_fields[j].name for j in range(N) if j not in assigned_tgt]
 
-        # 8. Warnings for required unmapped target fields
+        # 7. Warnings for required unmapped target fields
         warnings: list[str] = []
         mapped_targets = {m.target for m in mappings}
         for req_field in required_set:
@@ -261,7 +263,7 @@ class MapEngine:
                         f"Required target field '{req_field}' is unmapped and no candidate found."
                     )
 
-        # 9. Metadata with timing
+        # 8. Metadata with timing
         elapsed = time.perf_counter() - t0
         metadata = {
             "elapsed_seconds": round(elapsed, 4),

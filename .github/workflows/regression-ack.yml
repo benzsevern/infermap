@@ -53,12 +53,16 @@ jobs:
           conclusion=$(echo "$runs" | jq -r '.[0].conclusion')
           echo "Latest benchmark run conclusion: $conclusion"
 
-          if [ "$conclusion" = "success" ]; then
-            echo "Benchmark succeeded — no regression."
+          # Only a concrete `failure` conclusion gates merge. Anything else
+          # (success, skipped, cancelled, neutral, null/in-progress) passes
+          # through without requiring the regression-ack label — otherwise
+          # cancelled or skipped runs would block unrelated PRs.
+          if [ "$conclusion" != "failure" ]; then
+            echo "Benchmark conclusion '$conclusion' is not a failure — passing."
             exit 0
           fi
 
-          # Regression detected — require the label
+          # Regression detected (conclusion == failure) — require the label
           labels=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels --jq '.labels[].name')
           if echo "$labels" | grep -qx "regression-acked"; then
             echo "::notice::Benchmark regression detected, but 'regression-acked' label is present. Allowing merge."

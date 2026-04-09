@@ -66,6 +66,17 @@ def run(output: str, seed: int, only: str | None, self_test: bool, assert_agains
         else:
             click.echo(f"note: {synth_path} not found — skipping synthetic cases", err=True)
 
+    # Refuse to write a "perfect" scorecard for an empty corpus — it would
+    # poison baselines. An empty run is almost always a misconfiguration
+    # (missing manifest, over-aggressive --only filter, etc.).
+    if not cases:
+        click.echo(
+            "ERROR: no cases to run. Check manifest path and --only filter. "
+            "Refusing to write a vacuous scorecard.",
+            err=True,
+        )
+        raise SystemExit(2)
+
     t0 = time.perf_counter()
     results = run_cases(cases, RunOptions())
     duration = time.perf_counter() - t0
@@ -253,7 +264,14 @@ def _load_synthetic_cases(path: Path) -> list[Case]:
 
 
 def _assert_scorecard_matches(actual: dict, expected: dict, tolerance: float = 1e-4) -> None:
-    """Compare the `scorecard.overall` of two reports within tolerance."""
+    """Compare the `scorecard.overall` of two reports within tolerance.
+
+    Tolerance is intentionally 1e-4 (not tighter) because the committed
+    expected_self_test.json stores metrics rounded to 6 decimal places
+    (e.g. f1=0.857143 which is 6/7 rounded). A 1e-6 tolerance would trip on
+    that rounding. If the expected file is ever regenerated at higher
+    precision, this can be tightened.
+    """
     a = actual["scorecard"]["overall"]
     e = expected["scorecard"]["overall"]
     for key in ("f1", "top1", "mrr", "ece"):

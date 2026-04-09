@@ -51,13 +51,19 @@ export interface Mover {
 }
 
 export class Delta {
-  overall: Record<MetricKey, number> = { f1: 0, top1: 0, mrr: 0, ece: 0 };
-  byDifficulty: Record<string, Record<MetricKey, number>> = {};
-  byCategory: Record<string, Record<MetricKey, number>> = {};
-  byTag: Record<string, Record<MetricKey, number>> = {};
-  perCaseDeltas: Array<[string, number, number]> = [];
+  constructor(
+    public readonly overall: Record<MetricKey, number> = { f1: 0, top1: 0, mrr: 0, ece: 0 },
+    public readonly byDifficulty: Record<string, Record<MetricKey, number>> = {},
+    public readonly byCategory: Record<string, Record<MetricKey, number>> = {},
+    public readonly byTag: Record<string, Record<MetricKey, number>> = {},
+    public readonly perCaseDeltas: ReadonlyArray<readonly [string, number, number]> = [],
+  ) {}
 
-  /** True iff overall F1 dropped by strictly more than `threshold` (with IEEE 754 epsilon guard). */
+  /**
+   * True iff overall F1 dropped by strictly more than `threshold`.
+   * Uses a `1e-9` IEEE-754 epsilon guard so a drop exactly equal to
+   * `threshold` is NOT classified as a regression.
+   */
   isRegression(threshold = 0.02): boolean {
     const f1Delta = this.overall.f1 ?? 0;
     return f1Delta < -threshold - 1e-9;
@@ -103,17 +109,16 @@ function sliceDelta(
 }
 
 export function computeDelta(baseline: Report, current: Report): Delta {
-  const delta = new Delta();
-  delta.overall = metricDelta(baseline.scorecard.overall, current.scorecard.overall);
-  delta.byDifficulty = sliceDelta(
+  const overall = metricDelta(baseline.scorecard.overall, current.scorecard.overall);
+  const byDifficulty = sliceDelta(
     baseline.scorecard.by_difficulty ?? {},
     current.scorecard.by_difficulty ?? {},
   );
-  delta.byCategory = sliceDelta(
+  const byCategory = sliceDelta(
     baseline.scorecard.by_category ?? {},
     current.scorecard.by_category ?? {},
   );
-  delta.byTag = sliceDelta(
+  const byTag = sliceDelta(
     baseline.scorecard.by_tag ?? {},
     current.scorecard.by_tag ?? {},
   );
@@ -128,7 +133,9 @@ export function computeDelta(baseline: Report, current: Report): Delta {
     if (currentCases.has(id)) common.push(id);
   }
   common.sort();
-  delta.perCaseDeltas = common.map((id) => [id, baselineCases.get(id)!, currentCases.get(id)!]);
+  const perCaseDeltas: Array<readonly [string, number, number]> = common.map(
+    (id) => [id, baselineCases.get(id)!, currentCases.get(id)!] as const,
+  );
 
-  return delta;
+  return new Delta(overall, byDifficulty, byCategory, byTag, perCaseDeltas);
 }

@@ -38,49 +38,19 @@ export function makeEngine(opts: Required<RunOptions>): MapEngine {
   });
 }
 
-/** Run the engine on one case and score against expected mappings. */
+/** Run the engine on one case and score against expected mappings.
+ *
+ * The try block intentionally wraps ONLY the engine call — mirrors the Python
+ * runner. Metric computation bugs would otherwise be silently swallowed and
+ * scored as engine failures, masking real defects.
+ */
 export function scoreCase(case_: CaseData, engine: MapEngine): CaseResult {
+  let result;
   try {
-    const result = engine.mapSchemas(case_.sourceSchema, case_.targetSchema);
-
-    const inp: MetricInput = {
-      sourceFields: case_.sourceSchema.fields.map((f) => f.name),
-      targetFields: case_.targetSchema.fields.map((f) => f.name),
-      expectedMappings: case_.expected.mappings.map((m) => ({ source: m.source, target: m.target })),
-      expectedUnmappedSource: [...case_.expected.unmappedSource],
-      expectedUnmappedTarget: [...case_.expected.unmappedTarget],
-      actualMappings: result.mappings.map((m) => ({
-        source: m.source,
-        target: m.target,
-        confidence: m.confidence,
-      })),
-      scoreMatrix: result.scoreMatrix ?? {},
-      minConfidence: engine.minConfidence,
-    };
-
-    const { tp, fp, fn } = f1PerCase(inp);
-    const denom = 2 * tp + fp + fn;
-    const caseF1 = denom > 0 ? (2 * tp) / denom : 1;
-
-    return {
-      caseId: case_.id,
-      category: case_.category,
-      subcategory: case_.subcategory,
-      difficulty: case_.expectedDifficulty,
-      tags: [...case_.tags],
-      top1: topOneAccuracy(inp),
-      f1: caseF1,
-      mrr: meanReciprocalRank(inp),
-      tp,
-      fp,
-      fn,
-      predictions: extractPredictions(inp),
-      failed: false,
-      failureReason: null,
-    };
+    result = engine.mapSchemas(case_.sourceSchema, case_.targetSchema);
   } catch (err) {
-    const name = (err as Error).name ?? "Error";
-    const message = (err as Error).message ?? String(err);
+    const name = err instanceof Error ? err.name : "Error";
+    const message = err instanceof Error ? err.message : String(err);
     return {
       caseId: case_.id,
       category: case_.category,
@@ -98,6 +68,42 @@ export function scoreCase(case_: CaseData, engine: MapEngine): CaseResult {
       failureReason: `${name}: ${message}`,
     };
   }
+
+  const inp: MetricInput = {
+    sourceFields: case_.sourceSchema.fields.map((f) => f.name),
+    targetFields: case_.targetSchema.fields.map((f) => f.name),
+    expectedMappings: case_.expected.mappings.map((m) => ({ source: m.source, target: m.target })),
+    expectedUnmappedSource: [...case_.expected.unmappedSource],
+    expectedUnmappedTarget: [...case_.expected.unmappedTarget],
+    actualMappings: result.mappings.map((m) => ({
+      source: m.source,
+      target: m.target,
+      confidence: m.confidence,
+    })),
+    scoreMatrix: result.scoreMatrix ?? {},
+    minConfidence: engine.minConfidence,
+  };
+
+  const { tp, fp, fn } = f1PerCase(inp);
+  const denom = 2 * tp + fp + fn;
+  const caseF1 = denom > 0 ? (2 * tp) / denom : 1;
+
+  return {
+    caseId: case_.id,
+    category: case_.category,
+    subcategory: case_.subcategory,
+    difficulty: case_.expectedDifficulty,
+    tags: [...case_.tags],
+    top1: topOneAccuracy(inp),
+    f1: caseF1,
+    mrr: meanReciprocalRank(inp),
+    tp,
+    fp,
+    fn,
+    predictions: extractPredictions(inp),
+    failed: false,
+    failureReason: null,
+  };
 }
 
 export function abortIfOverBudget(failed: number, total: number, budget: number): void {
