@@ -14,15 +14,15 @@
     "infermap-bench": "./dist/cli.cjs"
   },
   "dependencies": {
-    "infermap": "file:../../../packages/infermap-js",
-    "commander": "^12",
     "ajv": "^8",
-    "ajv-formats": "^3"
+    "ajv-formats": "^3",
+    "commander": "^12",
+    "infermap": "file:../../../packages/infermap-js"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "typescript": "^5.4",
     "tsup": "^8",
+    "typescript": "^5.4",
     "vitest": "^1.5"
   }
 }
