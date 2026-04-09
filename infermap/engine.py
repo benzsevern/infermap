@@ -30,10 +30,12 @@ class MapEngine:
         sample_size: int = 500,
         scorers=None,
         config_path: str | None = None,
+        return_score_matrix: bool = False,
     ) -> None:
         self.min_confidence = min_confidence
         self.sample_size = sample_size
         self.scorers = scorers if scorers is not None else default_scorers()
+        self.return_score_matrix = return_score_matrix
         if config_path is not None:
             self._apply_config(config_path)
 
@@ -167,6 +169,17 @@ class MapEngine:
                 score_matrix[i, j] = combined
                 breakdown_matrix[i][j] = {name: r for name, (r, _) in results.items()}
 
+        # Optional: expose the full score matrix for MRR computation in the benchmark
+        score_matrix_dict: dict[str, dict[str, float]] | None = None
+        if self.return_score_matrix:
+            score_matrix_dict = {
+                src_fields[i].name: {
+                    tgt_fields[j].name: float(score_matrix[i, j])
+                    for j in range(N)
+                }
+                for i in range(M)
+            }
+
         # 6. Optimal assignment
         assignments = optimal_assign(score_matrix, self.min_confidence)
 
@@ -238,4 +251,5 @@ class MapEngine:
             unmapped_target=unmapped_target,
             warnings=warnings,
             metadata=metadata,
+            score_matrix=score_matrix_dict,
         )
