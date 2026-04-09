@@ -205,7 +205,13 @@ def _matches_filter(ref: CaseRef, filter_str: str) -> bool:
 
 
 def _load_synthetic_cases(path: Path) -> list[Case]:
-    """Load committed synthetic cases from generated.json into Case objects."""
+    """Load committed synthetic cases from generated.json into Case objects.
+
+    Sets value_count = len(sample_values) on every field so ProfileScorer
+    contributes to scoring (its gate is `source.value_count == 0 or
+    target.value_count == 0 → abstain`). Without this, synthetic cases
+    would measure with 2 of 6 scorers silently excluded.
+    """
     from infermap.types import FieldInfo, SchemaInfo
 
     data = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -216,6 +222,7 @@ def _load_synthetic_cases(path: Path) -> list[Case]:
                 name=f["name"],
                 dtype=f["dtype"],
                 sample_values=list(f["samples"]),
+                value_count=len(f["samples"]),
             )
             for f in entry["source_fields"]
         ]
@@ -224,6 +231,7 @@ def _load_synthetic_cases(path: Path) -> list[Case]:
                 name=f["name"],
                 dtype=f["dtype"],
                 sample_values=list(f["samples"]),
+                value_count=len(f["samples"]),
             )
             for f in entry["target_fields"]
         ]

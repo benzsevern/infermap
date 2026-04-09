@@ -9,7 +9,6 @@ from infermap_bench.runner import (
     FailureBudgetExceededError,
     RunOptions,
     _abort_if_over_budget,
-    _schema_to_rows,
     run_cases,
 )
 
@@ -32,58 +31,6 @@ def _case(case_id: str, src_names: list[str], tgt_names: list[str],
             unmapped_target=[n for n in tgt_names if n not in {t for _, t in mappings}],
         ),
     )
-
-
-class TestSchemaToRows:
-    """Regression guard: _schema_to_rows must preserve sample_values so that
-    PatternTypeScorer and ProfileScorer have real data to work with."""
-
-    def test_preserves_sample_values(self):
-        schema = SchemaInfo(fields=[
-            FieldInfo(name="email", sample_values=["a@b.co", "c@d.co", "e@f.co"]),
-            FieldInfo(name="age", sample_values=["25", "30", "35"]),
-        ])
-        rows = _schema_to_rows(schema)
-        assert len(rows) == 3
-        assert rows[0] == {"email": "a@b.co", "age": "25"}
-        assert rows[1] == {"email": "c@d.co", "age": "30"}
-        assert rows[2] == {"email": "e@f.co", "age": "35"}
-
-    def test_uneven_sample_lengths_padded_with_none(self):
-        schema = SchemaInfo(fields=[
-            FieldInfo(name="a", sample_values=["x", "y"]),
-            FieldInfo(name="b", sample_values=["p", "q", "r"]),
-        ])
-        rows = _schema_to_rows(schema)
-        assert len(rows) == 3
-        assert rows[2] == {"a": None, "b": "r"}
-
-    def test_empty_samples_still_produces_name_row(self):
-        """Fall-back path: no samples anywhere, but column names must survive."""
-        schema = SchemaInfo(fields=[FieldInfo(name="x"), FieldInfo(name="y")])
-        rows = _schema_to_rows(schema)
-        assert rows == [{"x": None, "y": None}]
-
-    def test_empty_schema_returns_empty(self):
-        schema = SchemaInfo(fields=[])
-        assert _schema_to_rows(schema) == []
-
-    def test_round_trip_preserves_pattern_signal(self):
-        """End-to-end check: after passing through _schema_to_rows and
-        InMemoryProvider.extract, the PatternTypeScorer should still detect
-        emails. This is the bug-fix regression guard — if anyone reverts
-        _schema_to_rows to strip samples, this test fires."""
-        from infermap.providers.memory import InMemoryProvider
-        from infermap.scorers.pattern_type import classify_field
-
-        schema = SchemaInfo(fields=[FieldInfo(
-            name="contact",
-            sample_values=["alice@example.com", "bob@example.org", "carol@test.io"],
-        )])
-        rows = _schema_to_rows(schema)
-        round_tripped = InMemoryProvider().extract(rows)
-        email_field = round_tripped.fields[0]
-        assert classify_field(email_field) == "email"
 
 
 class TestAbortBudget:
@@ -150,7 +97,7 @@ class TestFailureHandling:
             engine = original(opts)
             def bad_map(src, tgt):
                 raise RuntimeError("intentional test failure")
-            engine.map = bad_map  # type: ignore[method-assign]
+            engine.map_schemas = bad_map  # type: ignore[method-assign]
             return engine
 
         runner_mod._make_engine = broken_engine  # type: ignore[assignment]
@@ -174,7 +121,7 @@ class TestFailureHandling:
             engine = original(opts)
             def bad_map(src, tgt):
                 raise RuntimeError("boom")
-            engine.map = bad_map  # type: ignore[method-assign]
+            engine.map_schemas = bad_map  # type: ignore[method-assign]
             return engine
 
         runner_mod._make_engine = broken_engine  # type: ignore[assignment]

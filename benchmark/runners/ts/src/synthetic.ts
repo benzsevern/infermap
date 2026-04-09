@@ -63,6 +63,11 @@ function fieldsToSchema(fields: GeneratedField[], sourceName: string): SchemaInf
         name: f.name,
         dtype: f.dtype,
         sampleValues: f.samples,
+        // Set valueCount so ProfileScorer contributes. Without this,
+        // the TS ProfileScorer abstains on every synthetic case (gate:
+        // `source.valueCount === 0 || target.valueCount === 0 → null`),
+        // silently measuring only 2 of 6 scorers on the synthetic slice.
+        valueCount: f.samples.length,
       })
     ),
     sourceName,

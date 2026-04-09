@@ -41,39 +41,16 @@ def _make_engine(options: RunOptions) -> MapEngine:
     )
 
 
-def _schema_to_rows(schema) -> list[dict]:
-    """Convert a SchemaInfo to a list[dict] so the InMemoryProvider can
-    re-extract it. The engine's map() pipeline requires running inputs
-    through extract_schema, which doesn't accept SchemaInfo directly.
-
-    Critically, we preserve every field's `sample_values` so that
-    PatternTypeScorer and ProfileScorer have real data to work with —
-    otherwise the benchmark would measure name-matching alone (3 of 6
-    scorers neutered). Rows are filled column-by-column from each field's
-    sample_values; missing positions become None.
-    """
-    fields = schema.fields
-    if not fields:
-        return []
-    max_samples = max((len(f.sample_values) for f in fields), default=0)
-    if max_samples == 0:
-        # No samples at all — still build one row so column names survive.
-        return [{f.name: None for f in fields}]
-    rows: list[dict] = []
-    for i in range(max_samples):
-        row: dict = {}
-        for f in fields:
-            row[f.name] = f.sample_values[i] if i < len(f.sample_values) else None
-        rows.append(row)
-    return rows
-
-
 def _score_case(case: Case, engine: MapEngine) -> CaseResult:
     """Run the engine on one case and score it against expected mappings."""
     try:
-        result = engine.map(
-            _schema_to_rows(case.source_schema),
-            _schema_to_rows(case.target_schema),
+        # Use map_schemas (not map) to pass pre-extracted SchemaInfo directly
+        # without round-tripping through extract_schema. The round-trip would
+        # re-infer dtypes from sample strings via polars and cause drift from
+        # the TS runner, which uses mapSchemas directly.
+        result = engine.map_schemas(
+            case.source_schema,
+            case.target_schema,
         )
     except Exception as exc:
         logger.warning("Engine raised on case %s: %s", case.id, exc)

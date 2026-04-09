@@ -102,11 +102,38 @@ class MapEngine:
         **kwargs:
             Forwarded to ``extract_schema``.
         """
-        t0 = time.perf_counter()
-
         # 1. Extract schemas
         src_schema: SchemaInfo = extract_schema(source, sample_size=self.sample_size, **kwargs)
         tgt_schema: SchemaInfo = extract_schema(target, sample_size=self.sample_size, **kwargs)
+
+        # 2. Optional schema_file aliases (only applicable when paths are provided;
+        # callers who already have SchemaInfo use map_schemas directly).
+        sf_schema: SchemaInfo | None = None
+        if schema_file is not None:
+            sf_schema = extract_schema(schema_file, **kwargs)
+
+        return self.map_schemas(
+            src_schema,
+            tgt_schema,
+            required=required,
+            schema_file_schema=sf_schema,
+        )
+
+    def map_schemas(
+        self,
+        src_schema: SchemaInfo,
+        tgt_schema: SchemaInfo,
+        required: list[str] | None = None,
+        schema_file_schema: SchemaInfo | None = None,
+    ) -> MapResult:
+        """Map pre-extracted source and target schemas.
+
+        Mirrors TypeScript's ``MapEngine.mapSchemas``. Use this when you already
+        have ``SchemaInfo`` objects and don't need extraction. The benchmark runner
+        uses this path to avoid round-tripping through ``extract_schema`` (which
+        would re-infer dtypes from sample strings and cause drift between runners).
+        """
+        t0 = time.perf_counter()
 
         # 2. Merge required fields
         required_set: set[str] = set(tgt_schema.required_fields)
@@ -114,9 +141,8 @@ class MapEngine:
             required_set.update(required)
 
         # 3. Merge schema_file aliases into target fields
-        if schema_file is not None:
-            sf_schema: SchemaInfo = extract_schema(schema_file, **kwargs)
-            sf_by_name = {f.name: f for f in sf_schema.fields}
+        if schema_file_schema is not None:
+            sf_by_name = {f.name: f for f in schema_file_schema.fields}
             for tgt_field in tgt_schema.fields:
                 if tgt_field.name in sf_by_name:
                     sf_field = sf_by_name[tgt_field.name]
@@ -126,7 +152,7 @@ class MapEngine:
                     if merged:
                         tgt_field.metadata["aliases"] = merged
             # Also propagate required from schema_file
-            required_set.update(sf_schema.required_fields)
+            required_set.update(schema_file_schema.required_fields)
 
         # 4. Build M x N score matrix
         src_fields = src_schema.fields
