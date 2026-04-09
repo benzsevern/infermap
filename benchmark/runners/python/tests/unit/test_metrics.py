@@ -83,6 +83,18 @@ class TestTop1:
         )
         assert top1_accuracy(inp) == 0.0
 
+    def test_expected_mapped_but_not_predicted(self):
+        """Source was expected to map to a target but isn't in actual_mappings
+        at all — the predicted target is effectively None, so it mismatches
+        the expected X. Score for this source should be 0."""
+        inp = _make_input(
+            source_fields=["a"],
+            target_fields=["A"],
+            expected_mappings=[("a", "A")],
+            actual_mappings=[],  # nothing predicted — 'a' silently dropped
+        )
+        assert top1_accuracy(inp) == 0.0
+
 
 class TestF1:
     def test_perfect(self):
@@ -133,6 +145,17 @@ class TestF1:
         # Two cases: (2,0,0) and (1,1,1). Total: tp=3, fp=1, fn=1.
         # precision=3/4, recall=3/4, F1=0.75
         assert micro_f1([(2, 0, 0), (1, 1, 1)]) == 0.75
+
+    def test_f1_deduplicates_predictions(self):
+        """Set semantics: two identical predicted mappings count as one TP,
+        not two. Prevents a buggy engine from gaming precision by duplicating."""
+        inp = _make_input(
+            source_fields=["a"], target_fields=["A"],
+            expected_mappings=[("a", "A")],
+            actual_mappings=[("a", "A", 0.9), ("a", "A", 0.8)],  # same pair twice
+        )
+        tp, fp, fn = f1_per_case(inp)
+        assert (tp, fp, fn) == (1, 0, 0)
 
 
 class TestMRR:
@@ -217,6 +240,21 @@ class TestECE:
         ece = expected_calibration_error([Prediction(confidence=0.8, correct=True)])
         # single bin, conf=0.8, acc=1.0, gap=0.2
         assert abs(ece - 0.2) < 1e-9
+
+    def test_multi_bin_weighted(self):
+        """ECE must correctly weight bins by population.
+
+        Bin 1 (conf 0.1-0.2): 8 predictions, 4 correct → conf 0.15, acc 0.5, gap 0.35
+        Bin 9 (conf 0.9-1.0): 2 predictions, 2 correct → conf 0.95, acc 1.0, gap 0.05
+        Total 10. ECE = 0.8*0.35 + 0.2*0.05 = 0.28 + 0.01 = 0.29
+        """
+        preds = (
+            [Prediction(confidence=0.15, correct=True)] * 4
+            + [Prediction(confidence=0.15, correct=False)] * 4
+            + [Prediction(confidence=0.95, correct=True)] * 2
+        )
+        ece = expected_calibration_error(preds, num_bins=10)
+        assert abs(ece - 0.29) < 1e-9
 
 
 class TestHelpers:
