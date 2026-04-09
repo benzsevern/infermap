@@ -75,6 +75,29 @@ def test_rejects_missing_version_field(tmp_path):
         load_manifest(path)
 
 
+def test_rejects_boolean_version(tmp_path):
+    # Python treats `bool` as an `int` subclass, so this must be
+    # explicitly guarded or {"version": true} silently loads as v1.
+    path = _write_manifest(tmp_path, {
+        "version": True,  # type: ignore[dict-item]
+        "generated_at": "x",
+        "cases": [],
+    })
+    with pytest.raises(InvalidManifestError):
+        load_manifest(path)
+
+
+def test_rejects_field_counts_non_integer_value(tmp_path):
+    bad = _valid_entry(field_counts={"source": "four", "target": 4})
+    path = _write_manifest(tmp_path, {
+        "version": 1,
+        "generated_at": "x",
+        "cases": [bad],
+    })
+    with pytest.raises(InvalidManifestError):
+        load_manifest(path)
+
+
 def test_rejects_missing_cases_field(tmp_path):
     path = _write_manifest(tmp_path, {"version": 1, "generated_at": "x"})
     with pytest.raises(InvalidManifestError):

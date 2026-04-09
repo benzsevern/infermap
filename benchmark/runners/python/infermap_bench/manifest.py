@@ -72,7 +72,7 @@ def load_manifest(path: Path | str) -> list[CaseRef]:
         raise InvalidManifestError("Manifest root must be a JSON object")
     if "version" not in raw:
         raise InvalidManifestError("Manifest is missing required 'version' field")
-    if not isinstance(raw["version"], int):
+    if not isinstance(raw["version"], int) or isinstance(raw["version"], bool):
         raise InvalidManifestError("Manifest 'version' must be an integer")
     if raw["version"] > MANIFEST_VERSION:
         raise IncompatibleManifestError(
@@ -132,6 +132,12 @@ def _validate_case_entry(entry: object, idx: int) -> CaseRef:
         raise InvalidManifestError(
             f"cases[{idx}].field_counts must have exactly 'source' and 'target' keys"
         )
+    for key in ("source", "target"):
+        val = field_counts[key]
+        if not isinstance(val, int) or isinstance(val, bool):
+            raise InvalidManifestError(
+                f"cases[{idx}].field_counts.{key} must be an integer, got {type(val).__name__}"
+            )
 
     return CaseRef(
         id=entry["id"],
