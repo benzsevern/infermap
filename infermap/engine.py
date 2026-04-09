@@ -23,6 +23,67 @@ logger = logging.getLogger("infermap")
 _MIN_CONTRIBUTORS = 2
 
 
+_DELIMITERS = ("_", "-", ".", " ")
+
+
+def _common_affix_tokens(names: list[str], *, at_start: bool) -> str:
+    """Find a common delimiter-bounded affix across *names*, else "".
+
+    The affix must end (for prefix) or start (for suffix) at a delimiter
+    boundary so we don't over-strip shared substrings like "em" from
+    ["email", "employee"]. At least 2 names required; affix must be >= 2 chars.
+    """
+    if len(names) < 2:
+        return ""
+    # Find raw common substring at the chosen edge.
+    if at_start:
+        shortest = min(len(n) for n in names)
+        i = 0
+        while i < shortest and all(n[i] == names[0][i] for n in names):
+            i += 1
+        candidate = names[0][:i]
+    else:
+        shortest = min(len(n) for n in names)
+        i = 0
+        while i < shortest and all(n[-1 - i] == names[0][-1 - i] for n in names):
+            i += 1
+        candidate = names[0][-i:] if i > 0 else ""
+
+    if len(candidate) < 2:
+        return ""
+    # Truncate candidate to the last delimiter boundary (prefix) or first
+    # delimiter boundary (suffix) so we only strip whole tokens.
+    if at_start:
+        for pos in range(len(candidate) - 1, -1, -1):
+            if candidate[pos] in _DELIMITERS:
+                return candidate[: pos + 1]
+        return ""
+    else:
+        for pos in range(len(candidate)):
+            if candidate[pos] in _DELIMITERS:
+                return candidate[pos:]
+        return ""
+
+
+def _populate_canonical_names(schema: SchemaInfo) -> None:
+    """Strip the common prefix + suffix (if any) from each field name and
+    populate ``FieldInfo.canonical_name``. Mutates the schema in place.
+
+    If stripping would leave a name empty (e.g. all fields are literally the
+    prefix), canonical_name falls back to the original name.
+    """
+    names = [f.name for f in schema.fields]
+    prefix = _common_affix_tokens(names, at_start=True)
+    suffix = _common_affix_tokens(names, at_start=False)
+    for f in schema.fields:
+        canonical = f.name
+        if prefix and canonical.startswith(prefix):
+            canonical = canonical[len(prefix):]
+        if suffix and canonical.endswith(suffix):
+            canonical = canonical[: -len(suffix)]
+        f.canonical_name = canonical if canonical else f.name
+
+
 class MapEngine:
     """Orchestrates the full field-mapping pipeline."""
 
@@ -165,6 +226,16 @@ class MapEngine:
                         tgt_field.metadata["aliases"] = merged
             # Also propagate required from schema_file
             required_set.update(schema_file_schema.required_fields)
+
+        # 2b. Populate canonical_name on each field (affix-stripped). Mutates
+        # the schemas, so deep-copy first if we haven't already.
+        if schema_file_schema is None:
+            src_schema = copy.deepcopy(src_schema)
+            tgt_schema = copy.deepcopy(tgt_schema)
+        else:
+            src_schema = copy.deepcopy(src_schema)
+        _populate_canonical_names(src_schema)
+        _populate_canonical_names(tgt_schema)
 
         # 3. Build M x N score matrix
         src_fields = src_schema.fields
