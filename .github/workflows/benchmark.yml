@@ -65,7 +65,7 @@ jobs:
       - name: Install infermap + bench runner
         run: |
           pip install -e .
-          pip install -e benchmark/runners/python
+          pip install -e "benchmark/runners/python[dev]"
 
       - name: Validate synthetic cases in sync with config
         run: |
