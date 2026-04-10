@@ -295,7 +295,20 @@ export class MapEngine {
     if (this.calibrator && mappings.length > 0) {
       const raw = mappings.map((m) => m.confidence);
       const cal = this.calibrator.transform(raw);
-      for (let i = 0; i < mappings.length; i++) mappings[i]!.confidence = cal[i]!;
+      if (cal.length !== mappings.length) {
+        throw new Error(
+          `Calibrator.transform() returned ${cal.length} values for ${mappings.length} mappings`
+        );
+      }
+      for (let i = 0; i < mappings.length; i++) {
+        const c = cal[i]!;
+        if (!Number.isFinite(c)) {
+          throw new Error(
+            `Calibrator.transform() returned non-finite value ${c} at index ${i}`
+          );
+        }
+        mappings[i]!.confidence = c;
+      }
     }
 
     const unmappedSource: string[] = [];

@@ -134,9 +134,25 @@ describe("PlattCalibrator", () => {
   });
 });
 
+describe("IsotonicCalibrator empty fit", () => {
+  it("is a noop — passthrough on [0,1]", () => {
+    const cal = new IsotonicCalibrator();
+    cal.fit([], []);
+    const out = cal.transform([0.3, 0.7]);
+    expect(out[0]).toBeCloseTo(0.3, 5);
+    expect(out[1]).toBeCloseTo(0.7, 5);
+  });
+});
+
 describe("loadCalibrator error handling", () => {
   it("throws on unknown kind", () => {
     expect(() => loadCalibrator({ kind: "wat" })).toThrow();
+  });
+  it("throws on malformed isotonic JSON (missing x/y)", () => {
+    expect(() => loadCalibrator({ kind: "isotonic" })).toThrow(/missing or non-array/);
+  });
+  it("throws on malformed platt JSON (missing a/b)", () => {
+    expect(() => loadCalibrator({ kind: "platt" })).toThrow(/missing or non-number/);
   });
 });
 

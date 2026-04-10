@@ -39,12 +39,12 @@ export class IdentityCalibrator implements Calibrator {
 
 export class IsotonicCalibrator implements Calibrator {
   readonly kind = "isotonic";
-  x: number[];
-  y: number[];
+  private _x: number[];
+  private _y: number[];
 
   constructor(x: number[] = [0, 1], y: number[] = [0, 1]) {
-    this.x = x.slice();
-    this.y = y.slice();
+    this._x = x.slice();
+    this._y = y.slice();
   }
 
   fit(scores: readonly number[], correct: readonly number[]): void {
@@ -107,15 +107,15 @@ export class IsotonicCalibrator implements Calibrator {
       uniqY[i] = Math.max(0, Math.min(1, uniqY[i]!));
     }
 
-    this.x = uniqX;
-    this.y = uniqY;
+    this._x = uniqX;
+    this._y = uniqY;
   }
 
   transform(scores: readonly number[]): number[] {
-    if (this.x.length === 0) return scores.map((s) => s);
+    if (this._x.length === 0) return scores.map((s) => s);
     const out = new Array<number>(scores.length);
-    const x = this.x;
-    const y = this.y;
+    const x = this._x;
+    const y = this._y;
     const last = x.length - 1;
     for (let i = 0; i < scores.length; i++) {
       const s = scores[i]!;
@@ -143,12 +143,22 @@ export class IsotonicCalibrator implements Calibrator {
   }
 
   toJSON(): CalibratorJSON {
-    return { kind: this.kind, x: this.x.slice(), y: this.y.slice() };
+    return { kind: this.kind, x: this._x.slice(), y: this._y.slice() };
   }
 
   static fromJSON(obj: CalibratorJSON): IsotonicCalibrator {
-    const x = Array.isArray(obj["x"]) ? (obj["x"] as number[]).map(Number) : [0, 1];
-    const y = Array.isArray(obj["y"]) ? (obj["y"] as number[]).map(Number) : [0, 1];
+    if (!Array.isArray(obj["x"]) || !Array.isArray(obj["y"])) {
+      throw new Error(
+        "IsotonicCalibrator.fromJSON: missing or non-array 'x'/'y' fields"
+      );
+    }
+    const x = (obj["x"] as number[]).map(Number);
+    const y = (obj["y"] as number[]).map(Number);
+    if (x.length !== y.length) {
+      throw new Error(
+        `IsotonicCalibrator.fromJSON: x.length (${x.length}) !== y.length (${y.length})`
+      );
+    }
     return new IsotonicCalibrator(x, y);
   }
 }
@@ -163,12 +173,15 @@ function logSigmoid(z: number): number {
 
 export class PlattCalibrator implements Calibrator {
   readonly kind = "platt";
-  a: number;
-  b: number;
+  private _a: number;
+  private _b: number;
+
+  get a(): number { return this._a; }
+  get b(): number { return this._b; }
 
   constructor(a = 1.0, b = 0.0) {
-    this.a = a;
-    this.b = b;
+    this._a = a;
+    this._b = b;
   }
 
   fit(scores: readonly number[], correct: readonly number[]): void {
@@ -187,14 +200,14 @@ export class PlattCalibrator implements Calibrator {
       return -total;
     };
     const [a, b] = nelderMead2D(nll, [1.0, 0.0], 1e-6, 500);
-    this.a = a;
-    this.b = b;
+    this._a = a;
+    this._b = b;
   }
 
   transform(scores: readonly number[]): number[] {
     const out = new Array<number>(scores.length);
     for (let i = 0; i < scores.length; i++) {
-      const z = this.a * scores[i]! + this.b;
+      const z = this._a * scores[i]! + this._b;
       // Numerically stable sigmoid.
       out[i] = z >= 0 ? 1 / (1 + Math.exp(-z)) : Math.exp(z) / (1 + Math.exp(z));
     }
@@ -202,11 +215,16 @@ export class PlattCalibrator implements Calibrator {
   }
 
   toJSON(): CalibratorJSON {
-    return { kind: this.kind, a: this.a, b: this.b };
+    return { kind: this.kind, a: this._a, b: this._b };
   }
 
   static fromJSON(obj: CalibratorJSON): PlattCalibrator {
-    return new PlattCalibrator(Number(obj["a"] ?? 1), Number(obj["b"] ?? 0));
+    if (typeof obj["a"] !== "number" || typeof obj["b"] !== "number") {
+      throw new Error(
+        "PlattCalibrator.fromJSON: missing or non-number 'a'/'b' fields"
+      );
+    }
+    return new PlattCalibrator(obj["a"], obj["b"]);
   }
 }
 

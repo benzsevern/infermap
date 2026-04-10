@@ -96,6 +96,22 @@ describe("AliasScorer per-instance dict isolation", () => {
   });
 });
 
+describe("MapEngine default is generic-only", () => {
+  it("does NOT pick up healthcare aliases without explicit domain", () => {
+    const src = makeSchemaInfo({
+      fields: [makeFieldInfo({ name: "mrn", dtype: "string", sampleValues: ["A"], valueCount: 1 })],
+    });
+    const tgt = makeSchemaInfo({
+      fields: [makeFieldInfo({ name: "patient_id", dtype: "string", sampleValues: ["1"], valueCount: 1 })],
+    });
+    const result = new MapEngine().mapSchemas(src, tgt);
+    if (result.mappings.length > 0) {
+      // If fuzzy/profile produces a mapping, confidence must be low (no alias bonus)
+      expect(result.mappings[0]!.confidence).toBeLessThan(0.4);
+    }
+  });
+});
+
 describe("MapEngine + domains", () => {
   it("matches mrn -> patient_id with healthcare loaded", () => {
     const src = makeSchemaInfo({ fields: [f("mrn", ["A", "B", "C"])] });

@@ -40,6 +40,9 @@ export function isPrefixConcat(target: string, sourceTokens: string[]): boolean 
   const nSrc = sourceTokens.length;
   const nTgt = t.length;
   if (nSrc === 0 || nTgt === 0) return false;
+  // Guard against pathological inputs — abort if the DP table would be
+  // unreasonably large. 200 chars per side is generous for field names.
+  if (nTgt > 200 || nSrc > 50) return false;
   // dp[i][j] = can target[0:j] be consumed using sourceTokens[0:i]
   const dp: boolean[][] = Array.from({ length: nSrc + 1 }, () =>
     new Array<boolean>(nTgt + 1).fill(false)
